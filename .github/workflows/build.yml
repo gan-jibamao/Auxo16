@@ -14,96 +14,99 @@ jobs:
         include:
           # rootless: installs under /var/jb
           - scheme: rootless
-            artifact: rootless
+            arch: iphoneos-arm64
+            prefix: var/jb
           # RootHide: installs at /, Architecture iphoneos-arm64e
           - scheme: roothide
-            artifact: roothide
+            arch: iphoneos-arm64e
+            prefix: ""
 
     name: build (${{ matrix.scheme }})
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build dependencies
+      - name: Install clang + lld
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            make git curl xz-utils fakeroot libplist-utils \
-            libssl-dev libplist-dev libc6-dev zlib1g lld clang
-          # libxml2 / libtinfo5 package names differ across Ubuntu releases
-          # (noble: libxml2 -> libxml2t64, no libtinfo5 at all). Install
-          # whatever exists, never fail the step.
-          for pkg in libxml2 libxml2t64 libtinfo5 libncurses5 libncurses6; do
-            sudo apt-get install -y -qq "$pkg" || echo "skip $pkg"
-          done
-          # ldid (no apt package on ubuntu) -> prebuilt release
-          curl -fsSL -o /usr/local/bin/ldid \
-            https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
-          sudo chmod +x /usr/local/bin/ldid
-          ldid -h 2>&1 | head -2 || true
-          # Toolchain targets an older Ubuntu: patch up the .so names it wants.
-          LIBDIR=/usr/lib/x86_64-linux-gnu
-          [ -e "$LIBDIR/libtinfo.so.5" ] || \
-            sudo ln -sf "$LIBDIR/libtinfo.so.6" "$LIBDIR/libtinfo.so.5" || true
-          [ -e "$LIBDIR/libtinfo.so.5" ] || \
-            sudo ln -sf "$(ls $LIBDIR/libtinfo.so.* 2>/dev/null | head -1)" \
-                        "$LIBDIR/libtinfo.so.5" || true
-          sudo ldconfig
-          echo "--- libs ---"
-          ls -l "$LIBDIR/libtinfo.so.5" "$LIBDIR/libxml2.so.2" 2>&1 || true
-
-      - name: Install theos
-        run: |
-          git clone --recursive --depth 1 https://github.com/roothide/theos.git "$HOME/theos"
-          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
-          ls "$HOME/theos"
-
-      - name: Install iOS toolchain
-        run: |
-          # theos hard-codes $THEOS/toolchain/<platform>/<target>/bin/<tool>.
-          # Point that directory at the runner's own toolchain instead of
-          # shipping the ancient prebuilt one (needs libtinfo.so.5 +
-          # libxml2.so.2, neither installable on noble).
-          # theos adds -target arm64-apple-iosX.Y when no prefixed ld exists.
-          BIN="$THEOS/toolchain/linux/iphone/bin"
-          mkdir -p "$BIN"
-          # NOTE: do NOT symlink `ld` -- theos passes -fuse-ld=llvm and a
-          # bare `ld` would be resolved as GNU bfd ld, which rejects
-          # "unrecognised emulation mode: llvm". Only the compiler driver.
-          for t in clang clang++ ld64.lld ld.lld lld ar ranlib strip; do
-            real=$(command -v "$t" 2>/dev/null || true)
-            [ -n "$real" ] && ln -sf "$real" "$BIN/$t" || true
-          done
-          ls -l "$BIN"
-          "$BIN/clang" --version
+          sudo apt-get install -y -qq clang lld dpkg-dev
+          clang --version | head -1
+          ld64.lld --version | head -1
 
       - name: Install SDK
         run: |
-          mkdir -p "$THEOS/sdks"
-          git clone --depth 1 --filter=blob:none --sparse https://github.com/theos/sdks.git /tmp/sdks
+          git clone --depth 1 --filter=blob:none --sparse \
+            https://github.com/theos/sdks.git /tmp/sdks
           cd /tmp/sdks
           git sparse-checkout set iPhoneOS16.5.sdk
-          cp -R iPhoneOS16.5.sdk "$THEOS/sdks/"
-          ls "$THEOS/sdks"
+          echo "SDK=/tmp/sdks/iPhoneOS16.5.sdk" >> "$GITHUB_ENV"
+          ls /tmp/sdks/iPhoneOS16.5.sdk
 
-      - name: Build
+      - name: Compile both slices
         run: |
-          LD="$THEOS/toolchain/linux/iphone/bin/ld64.lld"
-          make clean all     LDFLAGS="-fuse-ld=$LD"
-          make package       LDFLAGS="-fuse-ld=$LD" \
-            THEOS_PACKAGE_SCHEME=${{ matrix.scheme }} \
-            FINALPACKAGE=1 \
-            DEBUG=0 \
-            ARCHS="arm64 arm64e"
-          echo "--- built ---"
+          set -e
+          O=.build
+          rm -rf "$O"; mkdir -p "$O"
+
+          for ARCH in arm64 arm64e; do
+            echo "=== $ARCH ==="
+            clang -target ${ARCH}-apple-ios16.0 \
+                  -isysroot "$SDK" -fobjc-arc -O2 -Wall \
+                  -c probe/Auxo16Probe.m \
+                  -o "$O/Auxo16Probe.$ARCH.o"
+
+            clang -target ${ARCH}-apple-ios16.0 \
+                  -isysroot "$SDK" \
+                  -fuse-ld=lld -dynamiclib -undefined dynamic_lookup \
+                  -o "$O/Auxo16Probe.$ARCH.dylib" \
+                  "$O/Auxo16Probe.$ARCH.o" \
+                  -framework Foundation -framework UIKit
+          done
+          ls -l "$O"
+
+      - name: Merge FAT dylib
+        run: |
+          set -e
+          python3 tools/make_fat.py .build/Auxo16Probe.dylib \
+            .build/Auxo16Probe.arm64.dylib \
+            .build/Auxo16Probe.arm64e.dylib
+          python3 tools/verify_arch.py .build/Auxo16Probe.dylib
+
+      - name: Package
+        run: |
+          set -e
+          ROOT=layout-pkg
+          rm -rf "$ROOT"
+          DEST="$ROOT/${{ matrix.prefix }}"
+          mkdir -p "$DEST/Library/MobileSubstrate/DynamicLibraries"
+          mkdir -p "$ROOT/DEBIAN"
+
+          cp .build/Auxo16Probe.dylib \
+             "$DEST/Library/MobileSubstrate/DynamicLibraries/"
+          cp Auxo16Probe.plist \
+             "$DEST/Library/MobileSubstrate/DynamicLibraries/"
+          cp layout/DEBIAN/control "$ROOT/DEBIAN/control"
+
+          sed -i "s|^Architecture:.*|Architecture: ${{ matrix.arch }}|" \
+            "$ROOT/DEBIAN/control"
+          chmod 755 "$DEST/Library/MobileSubstrate/DynamicLibraries/Auxo16Probe.dylib"
+
+          echo "--- control ---"
+          cat "$ROOT/DEBIAN/control"
+          echo "--- tree ---"
+          find "$ROOT" -type f | sort
+
+          mkdir -p packages
+          DEB="packages/com.ganjibamao.auxo16probe_1.0.0_${{ matrix.arch }}.deb"
+          dpkg-deb --build --root-owner-group "$ROOT" "$DEB"
           ls -l packages/
 
-      - name: Verify architecture
+      - name: Verify package
         run: |
           set -e
           DEB=$(ls packages/*.deb | head -1)
           echo "deb: $DEB"
-          dpkg-deb -f "$DEB" Architecture Package Version
+          dpkg-deb -f "$DEB" Package Version Architecture
           TMP=$(mktemp -d)
           dpkg-deb -x "$DEB" "$TMP"
           DYLIB=$(find "$TMP" -name 'Auxo16Probe.dylib' | head -1)
@@ -113,6 +116,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Auxo16Probe-${{ matrix.artifact }}
+          name: Auxo16Probe-${{ matrix.scheme }}
           path: packages/*.deb
           if-no-files-found: error
