@@ -1,0 +1,14 @@
+Package: com.ganjibamao.auxo16probe
+Name: Auxo16 Probe
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Section: Development
+Description: Auxo 3 -> iOS 16 project - device probe
+ Enumerates 42 private classes, 41 selectors and ivar layouts
+ that Auxo 3 depends on, then writes the result to
+ /var/mobile/Media/Auxo16-probe.txt
+ Pure diagnostic tool. No system modification, no network.
+Maintainer: ganjibamao
+Author: RNA for ganjibamao
+Depends: mobilesubstrate
+Installed-Size: 88
