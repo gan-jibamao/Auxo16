@@ -67,7 +67,10 @@ jobs:
           # theos adds -target arm64-apple-iosX.Y when no prefixed ld exists.
           BIN="$THEOS/toolchain/linux/iphone/bin"
           mkdir -p "$BIN"
-          for t in clang clang++ ld ld64.lld ld.lld lld ar ranlib strip; do
+          # NOTE: do NOT symlink `ld` -- theos passes -fuse-ld=llvm and a
+          # bare `ld` would be resolved as GNU bfd ld, which rejects
+          # "unrecognised emulation mode: llvm". Only the compiler driver.
+          for t in clang clang++ ld64.lld ld.lld lld ar ranlib strip; do
             real=$(command -v "$t" 2>/dev/null || true)
             [ -n "$real" ] && ln -sf "$real" "$BIN/$t" || true
           done
