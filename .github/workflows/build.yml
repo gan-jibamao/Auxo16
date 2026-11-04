@@ -29,7 +29,20 @@ jobs:
       - name: Install clang + lld
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq clang lld dpkg-dev
+          sudo apt-get install -y -qq dpkg-dev
+          # Pin clang/LLD 19: clang 21 emits arm64e ptrauth relocations that
+          # ld64.lld rejects ("INVALID relocation has width 8 bytes, but must
+          # be 0 bytes"). 19 is the version this build is verified against.
+          if sudo apt-get install -y -qq clang-19 lld-19; then
+            for pair in "clang clang-19" "clang++ clang++-19" \
+                        "ld64.lld ld64.lld-19" "ld.lld ld.lld-19"; do
+              set -- $pair
+              sudo update-alternatives --install /usr/bin/$1 $1 /usr/bin/$2 100
+            done
+          else
+            echo "clang-19 unavailable, falling back to default clang"
+            sudo apt-get install -y -qq clang lld
+          fi
           clang --version | head -1
           ld64.lld --version | head -1
 
