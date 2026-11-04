@@ -42,6 +42,29 @@ jobs:
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
           ls "$HOME/theos"
 
+      - name: Install iOS toolchain
+        run: |
+          # Linux needs a prebuilt cross toolchain (no Xcode available).
+          # The release asset is raw LZMA (.tar.lzma == tar + lzma stream),
+          # not xz -- tar -xf cannot auto-detect it.
+          sudo apt-get install -y -qq xz-utils lzma
+          mkdir -p "$THEOS/toolchain"
+          cd /tmp
+          curl -fsSL --retry 3 --retry-delay 2 -o tc.tar.lzma \
+            https://github.com/sbingner/llvm-project/releases/latest/download/linux-ios-arm64e-clang-toolchain.tar.lzma
+          ls -l tc.tar.lzma
+          xz --format=lzma -d -k tc.tar.lzma || unlzma -k tc.tar.lzma
+          ls -l tc.tar
+          mkdir -p "$THEOS/toolchain/linux"
+          tar -xf tc.tar -C "$THEOS/toolchain/linux"
+          ls "$THEOS/toolchain/linux"
+          # tarball root name varies; normalise to toolchain/linux/iphone
+          CLANG=$(find "$THEOS/toolchain/linux" -maxdepth 4 -type f -name clang | head -1)
+          echo "found clang: $CLANG"
+          BIN=$(dirname "$CLANG")
+          ln -sfn "$BIN" "$THEOS/toolchain/linux/iphone/bin"
+          "$THEOS/toolchain/linux/iphone/bin/clang" --version | head -2
+
       - name: Install SDK
         run: |
           mkdir -p "$THEOS/sdks"
