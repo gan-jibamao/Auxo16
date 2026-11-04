@@ -60,15 +60,19 @@ jobs:
 
       - name: Install iOS toolchain
         run: |
-          # Use the runner's own clang with an explicit -target triple.
-          # theos falls back to that path when toolchain/<platform>/<target>/bin
-          # holds no prefixed ld (makefiles/targets/Linux/iphone.mk).
-          # Avoids the ancient sbingner toolchain, which needs libtinfo.so.5
-          # and libxml2.so.2 that current Ubuntu no longer ships.
-          clang --version
-          which clang ld64.lld ld.lld
-          rm -rf "$THEOS/toolchain/linux"
-          echo "using system clang; theos will pass -target for cross compiling"
+          # theos hard-codes $THEOS/toolchain/<platform>/<target>/bin/<tool>.
+          # Point that directory at the runner's own toolchain instead of
+          # shipping the ancient prebuilt one (needs libtinfo.so.5 +
+          # libxml2.so.2, neither installable on noble).
+          # theos adds -target arm64-apple-iosX.Y when no prefixed ld exists.
+          BIN="$THEOS/toolchain/linux/iphone/bin"
+          mkdir -p "$BIN"
+          for t in clang clang++ ld ld64.lld ld.lld lld ar ranlib strip; do
+            real=$(command -v "$t" 2>/dev/null || true)
+            [ -n "$real" ] && ln -sf "$real" "$BIN/$t" || true
+          done
+          ls -l "$BIN"
+          "$BIN/clang" --version
 
       - name: Install SDK
         run: |
