@@ -29,7 +29,7 @@ jobs:
       - name: Install theos
         run: |
           brew install ldid xz
-          git clone --recursive --depth 1 https://github.com/theos/theos.git "$HOME/theos"
+          git clone --recursive --depth 1 https://github.com/roothide/theos.git "$HOME/theos"
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
 
       - name: Install SDK
@@ -40,11 +40,6 @@ jobs:
           git sparse-checkout set iPhoneOS16.5.sdk
           cp -R iPhoneOS16.5.sdk "$THEOS/sdks/"
           ls "$THEOS/sdks"
-
-      - name: Set package architecture
-        run: |
-          sed -i '' 's/^Architecture:.*/Architecture: ${{ matrix.deb_arch }}/' layout/DEBIAN/control
-          grep '^Architecture' layout/DEBIAN/control
 
       - name: Build
         run: |
