@@ -58,15 +58,14 @@ jobs:
           mkdir -p "$THEOS/toolchain/linux"
           tar -xf tc.tar -C "$THEOS/toolchain/linux"
           ls "$THEOS/toolchain/linux"
-          # tarball unpacks to ios-arm64e-clang-toolchain/{bin,lib,...}
-          # tarball root name varies; normalise to toolchain/linux/iphone
-          # clang inside the tarball may be a symlink -> use -name only, no -type
-          CLANG=$(find "$THEOS/toolchain/linux" -maxdepth 5 -name clang | head -1)
-          echo "found clang: $CLANG"
-          BIN=$(dirname "$CLANG")
+          # tarball unpacks to ios-arm64e-clang-toolchain/{bin,include,lib,...}
+          TC="$THEOS/toolchain/linux/ios-arm64e-clang-toolchain"
+          ls "$TC"
           mkdir -p "$THEOS/toolchain/linux/iphone"
-          ln -sfn "$BIN" "$THEOS/toolchain/linux/iphone/bin"
-          ls -l "$THEOS/toolchain/linux/iphone/bin" | head -5
+          ln -sfn "$TC/bin" "$THEOS/toolchain/linux/iphone/bin"
+          ln -sfn "$TC/lib" "$THEOS/toolchain/linux/iphone/lib"
+          ls -l "$THEOS/toolchain/linux/iphone/"
+          ls -l "$THEOS/toolchain/linux/iphone/bin/" | head -5
           "$THEOS/toolchain/linux/iphone/bin/clang" --version | head -2
 
       - name: Install SDK
