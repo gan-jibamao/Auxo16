@@ -33,18 +33,18 @@ jobs:
           # Pin clang/LLD 19: clang 21 emits arm64e ptrauth relocations that
           # ld64.lld rejects ("INVALID relocation has width 8 bytes, but must
           # be 0 bytes"). 19 is the version this build is verified against.
+          # Use -B <dir> so the driver finds ld64.lld next to clang itself;
+          # passing -fuse-ld=<abs path> makes clang skip its Mach-O
+          # argument synthesis (-arch / -platform_version).
           if sudo apt-get install -y -qq clang-19 lld-19; then
-            for pair in "clang clang-19" "clang++ clang++-19" \
-                        "ld64.lld ld64.lld-19" "ld.lld ld.lld-19"; do
-              set -- $pair
-              sudo update-alternatives --install /usr/bin/$1 $1 /usr/bin/$2 100
-            done
+            echo "CCDIR=/usr/lib/llvm-19/bin" >> "$GITHUB_ENV"
           else
-            echo "clang-19 unavailable, falling back to default clang"
             sudo apt-get install -y -qq clang lld
+            echo "CCDIR=/usr/bin" >> "$GITHUB_ENV"
           fi
-          clang --version | head -1
-          ld64.lld --version | head -1
+          "$CCDIR/clang" --version | head -1
+          "$CCDIR/ld64.lld" --version 2>/dev/null | head -1 || true
+          ls "$CCDIR" | rg 'clang$|ld64' || ls "$CCDIR" | head
 
       - name: Install SDK
         run: |
@@ -63,12 +63,12 @@ jobs:
 
           for ARCH in arm64 arm64e; do
             echo "=== $ARCH ==="
-            clang -target ${ARCH}-apple-ios16.0 \
+            "$CCDIR/clang" -B "$CCDIR" -target ${ARCH}-apple-ios16.0 \
                   -isysroot "$SDK" -fobjc-arc -O2 -Wall \
                   -c probe/Auxo16Probe.m \
                   -o "$O/Auxo16Probe.$ARCH.o"
 
-            clang -target ${ARCH}-apple-ios16.0 \
+            "$CCDIR/clang" -B "$CCDIR" -target ${ARCH}-apple-ios16.0 \
                   -isysroot "$SDK" \
                   -fuse-ld=lld -dynamiclib -undefined dynamic_lookup \
                   -o "$O/Auxo16Probe.$ARCH.dylib" \
