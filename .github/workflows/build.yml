@@ -12,14 +12,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # rootless：Architecture iphoneos-arm64，装到 /var/jb
+          # rootless: Architecture iphoneos-arm64, installs to /var/jb
           - scheme: rootless
             deb_arch: iphoneos-arm64
-            artifact: roothide-off
-          # RootHide：Architecture iphoneos-arm64e，装到 / 根
+            artifact: rootless
+          # RootHide: Architecture iphoneos-arm64e, installs to /
           - scheme: roothide
             deb_arch: iphoneos-arm64e
-            artifact: roothide-on
+            artifact: roothide
 
     name: build (${{ matrix.scheme }})
 
@@ -46,7 +46,7 @@ jobs:
           sed -i '' 's/^Architecture:.*/Architecture: ${{ matrix.deb_arch }}/' layout/DEBIAN/control
           grep '^Architecture' layout/DEBIAN/control
 
-      - name: Build (${{ matrix.scheme }})
+      - name: Build
         run: |
           make clean all
           make package \
@@ -66,27 +66,7 @@ jobs:
           dpkg-deb -x "$DEB" "$TMP"
           DYLIB=$(find "$TMP" -name 'Auxo16Probe.dylib' | head -1)
           echo "dylib: $DYLIB"
-          python3 - "$DYLIB" <<'PY'
-import struct, sys
-d = open(sys.argv[1], 'rb').read()
-m = struct.unpack('<I', d[:4])[0]
-if m in (0xcafebabe, 0xbebafeca):
-    n = struct.unpack('>I', d[4:8])[0]
-    print('FAT with %d slices' % n)
-    ok = False
-    for i in range(n):
-        off = 8 + i * 20
-        cpu, sub, o, sz, al = struct.unpack('>iiIII', d[off:off+20])
-        print('  cpu=%#x sub=%#x size=%d' % (cpu, sub, sz))
-        if cpu == 0x0100000c:
-            ok = True
-    assert ok, 'GATE FAIL: no arm64 slice'
-else:
-    cpu, sub, ft = struct.unpack('<iiI', d[4:16])
-    print('thin cpu=%#x sub=%#x ft=%d' % (cpu, sub, ft))
-    assert cpu == 0x0100000c, 'GATE FAIL: not arm64'
-print('>>> ARCH GATE PASS')
-PY
+          python3 tools/verify_arch.py "$DYLIB"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
