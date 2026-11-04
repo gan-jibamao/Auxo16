@@ -88,8 +88,9 @@ jobs:
 
       - name: Build
         run: |
-          make clean all
-          make package \
+          LD="$THEOS/toolchain/linux/iphone/bin/ld64.lld"
+          make clean all     LDFLAGS="-fuse-ld=$LD"
+          make package       LDFLAGS="-fuse-ld=$LD" \
             THEOS_PACKAGE_SCHEME=${{ matrix.scheme }} \
             FINALPACKAGE=1 \
             DEBUG=0 \
