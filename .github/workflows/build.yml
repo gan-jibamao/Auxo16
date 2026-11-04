@@ -7,18 +7,16 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          # rootless: Architecture iphoneos-arm64, installs to /var/jb
+          # rootless: installs under /var/jb
           - scheme: rootless
-            deb_arch: iphoneos-arm64
             artifact: rootless
-          # RootHide: Architecture iphoneos-arm64e, installs to /
+          # RootHide: installs at /, Architecture iphoneos-arm64e
           - scheme: roothide
-            deb_arch: iphoneos-arm64e
             artifact: roothide
 
     name: build (${{ matrix.scheme }})
@@ -26,11 +24,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            make git curl xz-utils fakeroot libplist-utils \
+            libssl-dev libplist-dev libc6-dev
+          # ldid (no apt package on ubuntu) -> prebuilt release
+          curl -fsSL -o /usr/local/bin/ldid \
+            https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
+          sudo chmod +x /usr/local/bin/ldid
+          ldid -h 2>&1 | head -2 || true
+
       - name: Install theos
         run: |
-          brew install ldid xz
           git clone --recursive --depth 1 https://github.com/roothide/theos.git "$HOME/theos"
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+          ls "$HOME/theos"
 
       - name: Install SDK
         run: |
@@ -54,6 +64,7 @@ jobs:
 
       - name: Verify architecture
         run: |
+          set -e
           DEB=$(ls packages/*.deb | head -1)
           echo "deb: $DEB"
           dpkg-deb -f "$DEB" Architecture Package Version
