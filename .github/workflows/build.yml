@@ -29,7 +29,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
             make git curl xz-utils fakeroot libplist-utils \
-            libssl-dev libplist-dev libc6-dev zlib1g
+            libssl-dev libplist-dev libc6-dev zlib1g lld clang
           # libxml2 / libtinfo5 package names differ across Ubuntu releases
           # (noble: libxml2 -> libxml2t64, no libtinfo5 at all). Install
           # whatever exists, never fail the step.
@@ -60,29 +60,15 @@ jobs:
 
       - name: Install iOS toolchain
         run: |
-          # Linux needs a prebuilt cross toolchain (no Xcode available).
-          # The release asset is raw LZMA (.tar.lzma == tar + lzma stream),
-          # not xz -- tar -xf cannot auto-detect it.
-          sudo apt-get install -y -qq xz-utils lzma
-          mkdir -p "$THEOS/toolchain"
-          cd /tmp
-          curl -fsSL --retry 3 --retry-delay 2 -o tc.tar.lzma \
-            https://github.com/sbingner/llvm-project/releases/latest/download/linux-ios-arm64e-clang-toolchain.tar.lzma
-          ls -l tc.tar.lzma
-          xz --format=lzma -d -k tc.tar.lzma || unlzma -k tc.tar.lzma
-          ls -l tc.tar
-          mkdir -p "$THEOS/toolchain/linux"
-          tar -xf tc.tar -C "$THEOS/toolchain/linux"
-          ls "$THEOS/toolchain/linux"
-          # tarball unpacks to ios-arm64e-clang-toolchain/{bin,include,lib,...}
-          TC="$THEOS/toolchain/linux/ios-arm64e-clang-toolchain"
-          ls "$TC"
-          mkdir -p "$THEOS/toolchain/linux/iphone"
-          ln -sfn "$TC/bin" "$THEOS/toolchain/linux/iphone/bin"
-          ln -sfn "$TC/lib" "$THEOS/toolchain/linux/iphone/lib"
-          ls -l "$THEOS/toolchain/linux/iphone/"
-          ls -l "$THEOS/toolchain/linux/iphone/bin/" | head -5
-          "$THEOS/toolchain/linux/iphone/bin/clang" --version | head -2
+          # Use the runner's own clang with an explicit -target triple.
+          # theos falls back to that path when toolchain/<platform>/<target>/bin
+          # holds no prefixed ld (makefiles/targets/Linux/iphone.mk).
+          # Avoids the ancient sbingner toolchain, which needs libtinfo.so.5
+          # and libxml2.so.2 that current Ubuntu no longer ships.
+          clang --version
+          which clang ld64.lld ld.lld
+          rm -rf "$THEOS/toolchain/linux"
+          echo "using system clang; theos will pass -target for cross compiling"
 
       - name: Install SDK
         run: |
