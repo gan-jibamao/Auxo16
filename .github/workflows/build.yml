@@ -29,12 +29,20 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
             make git curl xz-utils fakeroot libplist-utils \
-            libssl-dev libplist-dev libc6-dev
+            libssl-dev libplist-dev libc6-dev \
+            libtinfo5 libncurses5 || true
           # ldid (no apt package on ubuntu) -> prebuilt release
           curl -fsSL -o /usr/local/bin/ldid \
             https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
           sudo chmod +x /usr/local/bin/ldid
           ldid -h 2>&1 | head -2 || true
+          # The prebuilt toolchain targets older Ubuntu: needs libtinfo.so.5.
+          # If apt has no libtinfo5 (24.04+), symlink the current one.
+          if [ ! -e /usr/lib/x86_64-linux-gnu/libtinfo.so.5 ]; then
+            sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 \
+                        /usr/lib/x86_64-linux-gnu/libtinfo.so.5 || true
+          fi
+          ldconfig || true
 
       - name: Install theos
         run: |
